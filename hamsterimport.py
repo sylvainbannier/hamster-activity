@@ -15,6 +15,7 @@ import TSV files to hamster as exported with hamster export command
 
 
 import datetime as dt
+from datetime import date, timedelta
 import csv
 import sys
 import os
@@ -24,6 +25,7 @@ from argparse import RawDescriptionHelpFormatter
 
 from hamster import client
 from hamster.lib import stuff
+from mx.DateTime.DateTime import TimeDelta
 
 
 __all__ = []
@@ -47,35 +49,49 @@ class HamsterImport():
             for row in csvreader:
                 utf8row = []
                 for col in row:
-                    utf8row.append(col.decode('utf-8'))
+                    utf8row.append(col.strip().decode('utf-8'))
                 (activity,start_time,end_time,duration,category,description,tags) = utf8row
                 if header:
-                    start_time = dt.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
-                    if start_time not in updated_times:
-                        end_time = dt.datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S")
-                        tags_list = tags.split(',')
-                        tags = ''
-                        for tag in tags_list:
-                            tags += ' #'+tag
-                        activity = '%s@%s, %s %s'%(activity,category,description,tags)
-    
-                        facts = self.storage.get_facts(start_time,end_time)
-                        fact_found = False
-                        if facts:
-                            for fact in facts:
-                                if fact.start_time == start_time and fact.end_time == end_time:
-                                    print "update : "+activity
-                                    fact_found = True
-                                    self.storage.update_fact(fact.id,stuff.Fact(activity,
-                                                                     start_time = start_time,
-                                                                     end_time = end_time))
-                        if not fact_found:
-                            print "add : "+activity
-                            self.storage.add_fact(stuff.Fact(activity,
-                                                             start_time = start_time,
-                                                             end_time = end_time))
-                           
-                    updated_times.append(start_time)
+                    try:
+                        start_time = dt.datetime.strptime(start_time, "%Y-%m-%d %H:%M:%S")
+                        if start_time not in updated_times:
+                            end_time = dt.datetime.strptime(end_time, "%Y-%m-%d %H:%M:%S")
+                            tags_list = tags.split(',')
+                            tags = ''
+                            for tag in tags_list:
+                                tag = tag.strip()
+                                if tag:
+                                    tags += ' #'+tag
+                            input_line = activity
+                            if category:
+                                input_line += '@%s'%category
+                            if tags or description:
+                                input_line += ','
+                            if description:
+                                input_line += description
+                            if tags:
+                                input_line += ' '+tags
+        
+                            facts = self.storage.get_facts(start_time-timedelta(days=1),end_time+timedelta(days=1))
+                            fact_found = False
+                            if facts:
+                                for fact in facts:
+                                    if fact.start_time == start_time and fact.end_time == end_time:
+                                        print "[UPDATE] [%s - %s] : %s " % (start_time,end_time,input_line)
+                                        fact_found = True
+                                        self.storage.update_fact(fact.id,stuff.Fact(input_line,
+                                                                         start_time = start_time,
+                                                                         end_time = end_time))
+                            if not fact_found:
+                                print "[ADD   ] [%s - %s] : %s " % (start_time,end_time,input_line)
+                                self.storage.add_fact(stuff.Fact(input_line,
+                                                                 start_time = start_time,
+                                                                 end_time = end_time))
+                               
+                        updated_times.append(start_time)
+                    except ValueError:
+                        print "[ERROR ] Wrong format for this line : %s\n" % utf8row
+                        
                 header = True        
 
 class CLIError(Exception):
